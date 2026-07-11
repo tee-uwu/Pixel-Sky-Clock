@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pixel Sky Clock</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* palette per time-of-day */
+    --dawn-top:#7ea6c9;    --dawn-bot:#f4a97e;   --dawn-sun:#ffd98e;   --dawn-glow:#ffb37a;
+    --day-top:#4fb0e6;     --day-bot:#8fd8f0;    --day-sun:#fff2a8;    --day-glow:#fff2a8;
+    --dusk-top:#3b2a52;    --dusk-bot:#e0653f;   --dusk-sun:#ffb199;   --dusk-glow:#ff8a5c;
+    --night-top:#0a0a1e;   --night-bot:#1c1840;  --night-moon:#eef2ff; --night-glow:#8fa8ff;
+
+    --bld-far-dawn:#7a7f9e;   --bld-near-dawn:#544f6e;
+    --bld-far-day:#5a7fa0;    --bld-near-day:#3a5773;
+    --bld-far-dusk:#4a2f52;   --bld-near-dusk:#2c1a38;
+    --bld-far-night:#141224;  --bld-near-night:#0a0916;
+
+    --window-off:#00000030;
+    --window-on-day:#ffe98a;
+    --window-on-night:#ffe98a;
+
+    --ink:#22223b;
+    --panel:#fff8ec;
+    --panel-edge:#22223b;
+    --accent:#ff8a5c;
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; image-rendering:pixelated; }
+  html,body{ height:100%; overflow:hidden; font-family:'Press Start 2P',monospace; }
+
+  body{
+    position:relative;
+    background:linear-gradient(to bottom, var(--day-top), var(--day-bot));
+    transition:background 2s ease;
+  }
+  body.dawn{ background:linear-gradient(to bottom, var(--dawn-top) 0%, var(--dawn-bot) 100%); }
+  body.day{  background:linear-gradient(to bottom, var(--day-top) 0%, var(--day-bot) 100%); }
+  body.dusk{ background:linear-gradient(to bottom, var(--dusk-top) 0%, var(--dusk-bot) 100%); }
+  body.night{background:linear-gradient(to bottom, var(--night-top) 0%, var(--night-bot) 100%); }
+
+  /* ============ STARS ============ */
+  .stars{ position:absolute; inset:0; opacity:0; transition:opacity 2s ease; z-index:1; }
+  body.night .stars{ opacity:1; }
+  .star{
+    position:absolute; width:2px; height:2px; background:#eaf1ff;
+    animation:twinkle 2.4s ease-in-out infinite;
+  }
+  .star.big{ width:3px; height:3px; box-shadow:0 0 4px 1px #eaf1ff88; }
+  @keyframes twinkle{ 0%,100%{opacity:.25} 50%{opacity:1} }
+
+  /* ============ SUN / MOON (pixel sprite via box-shadow pixel grid) ============ */
+  .celestial-wrap{
+    position:absolute; left:50%; top:14%; transform:translateX(-50%);
+    z-index:2; transition: top 2s ease, filter 2s ease;
+  }
+  .celestial{
+    width:64px; height:64px; position:relative;
+  }
+  .px{ position:absolute; width:8px; height:8px; }
+
+  /* Sun sprite (8x8 grid, pixel scale 8) - drawn with box-shadow pixels */
+  .sun-sprite, .moon-sprite{ position:relative; width:64px; height:64px; }
+  .sun-core{
+    position:absolute; left:12px; top:12px; width:40px; height:40px;
+    background:var(--day-sun);
+    clip-path: polygon(
+      20% 0%, 30% 0%, 30% 10%, 40% 10%, 40% 0%, 60% 0%, 60% 10%, 70% 10%, 70% 0%, 80% 0%,
+      80% 20%, 100% 20%, 100% 30%, 90% 30%, 90% 40%, 100% 40%, 100% 60%, 90% 60%, 90% 70%,
+      100% 70%, 100% 80%, 80% 80%, 80% 100%, 70% 100%, 70% 90%, 60% 90%, 60% 100%, 40% 100%,
+      40% 90%, 30% 90%, 30% 100%, 20% 100%, 20% 80%, 0% 80%, 0% 70%, 10% 70%, 10% 60%, 0% 60%,
+      0% 40%, 10% 40%, 10% 30%, 0% 30%, 0% 20%, 20% 20%
+    );
+    box-shadow:0 0 30px 6px var(--day-glow);
+    transition: background 2s ease, box-shadow 2s ease;
+  }
+  body.dawn .sun-core{ background:var(--dawn-sun); box-shadow:0 0 30px 6px var(--dawn-glow); }
+  body.dusk .sun-core{ background:var(--dusk-sun); box-shadow:0 0 30px 6px var(--dusk-glow); }
+  body.night .sun-core{ opacity:0; }
+
+  .moon-core{
+    position:absolute; left:14px; top:14px; width:36px; height:36px;
+    background:var(--night-moon);
+    clip-path: polygon(35% 0%,65% 0%,65% 8%,80% 8%,80% 20%,92% 20%,92% 35%,100% 35%,100% 65%,92% 65%,92% 80%,80% 80%,80% 92%,65% 92%,65% 100%,35% 100%,35% 92%,20% 92%,20% 80%,8% 80%,8% 65%,0% 65%,0% 35%,8% 35%,8% 20%,20% 20%,20% 8%,35% 8%);
+    box-shadow:0 0 26px 8px var(--night-glow);
+    opacity:0;
+    transition:opacity 2s ease;
+  }
+  body.night .moon-core{ opacity:1; }
+  .crater{ position:absolute; background:#c9d3f0; opacity:.6; }
+
+  body.dawn .celestial-wrap{ top:34%; }
+  body.day .celestial-wrap{ top:10%; }
+  body.dusk .celestial-wrap{ top:38%; }
+  body.night .celestial-wrap{ top:12%; }
+
+  /* ============ CLOUDS (pixel block sprites, css var themed) ============ */
+  .cloud-layer{ position:absolute; inset:0; z-index:3; pointer-events:none; overflow:hidden; }
+  .cloud{
+    position:absolute;
+    filter: drop-shadow(2px 2px 0 rgba(0,0,0,0.08));
+    opacity:0.95;
+  }
+  .cloud-px{
+    position:absolute; background:#fff;
+  }
+  body.dusk .cloud-px, body.dawn .cloud-px{ background:#ffe3d1; }
+  body.night .cloud-px{ background:#3a3d63; }
+
+  @keyframes driftRight{
+    from{ transform:translateX(-140px); }
+    to{ transform:translateX(calc(100vw + 140px)); }
+  }
+
+  /* ============ BUILDINGS (pixel skyline, layered) ============ */
+  .skyline{ position:absolute; bottom:0; left:0; width:100%; z-index:6; }
+  .skyline svg{ display:block; width:100%; height:auto; }
+  .bld-far{ fill:var(--bld-far-day); transition:fill 2s ease; }
+  .bld-near{ fill:var(--bld-near-day); transition:fill 2s ease; }
+  body.dawn .bld-far{ fill:var(--bld-far-dawn); } body.dawn .bld-near{ fill:var(--bld-near-dawn); }
+  body.dusk .bld-far{ fill:var(--bld-far-dusk); } body.dusk .bld-near{ fill:var(--bld-near-dusk); }
+  body.night .bld-far{ fill:var(--bld-far-night); } body.night .bld-near{ fill:var(--bld-near-night); }
+
+  .win{ fill:var(--window-off); transition:fill .6s ease; }
+  .win.lit{ fill:var(--window-on-day); }
+  body.night .win.lit{ fill:#ffe98a; }
+  body.dusk .win.lit{ fill:#ffcf7a; }
+
+  /* ============ BIRDS ============ */
+  .bird-layer{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; }
+  .bird{
+    position:absolute; width:20px; height:12px;
+  }
+  .bird svg{ width:100%; height:100%; display:block; }
+  .bird path{ fill:var(--ink); }
+  body.night .bird path{ fill:#cfd6f5; }
+
+  @keyframes flyAcross{
+    from{ transform:translate(-60px, 0) scale(1); }
+    to{ transform:translate(calc(100vw + 60px), -40px) scale(1); }
+  }
+  @keyframes flap{
+    0%,100%{ background-position-y:0; }
+    50%{ background-position-y:-12px; }
+  }
+
+  /* ============ PLANE ============ */
+  .plane-layer{ position:absolute; inset:0; z-index:4; pointer-events:none; overflow:hidden; }
+  .plane{ position:absolute; top:18%; width:36px; height:16px; animation:planeFly 32s linear infinite; }
+  .plane svg{ width:100%; height:100%; }
+  .plane path{ fill:var(--ink); }
+  body.night .plane path{ fill:#dfe6ff; }
+  .contrail{
+    position:absolute; top:50%; left:-120px; width:120px; height:2px;
+    background:linear-gradient(to left, rgba(255,255,255,0.55), rgba(255,255,255,0));
+  }
+  body.night .contrail{ background:linear-gradient(to left, rgba(200,210,255,0.4), rgba(200,210,255,0)); }
+  @keyframes planeFly{
+    from{ transform:translateX(-160px); }
+    to{ transform:translateX(calc(100vw + 160px)); }
+  }
+
+  /* ============ MAIN UI ============ */
+  .container{
+    position:relative; z-index:10;
+    height:100vh; display:flex; flex-direction:column;
+    align-items:center; justify-content:center; gap:26px;
+  }
+
+  .clock-panel{
+    background:var(--panel);
+    border:4px solid var(--panel-edge);
+    box-shadow: 6px 6px 0 var(--panel-edge);
+    padding:26px 34px;
+    position:relative;
+    image-rendering:pixelated;
+  }
+  .clock-panel::before{
+    content:"";
+    position:absolute; inset:-4px;
+    border:4px solid transparent;
+    pointer-events:none;
+  }
+  /* corner pixel notches for retro card feel */
+  .corner{ position:absolute; width:8px; height:8px; background:var(--panel-edge); }
+  .corner.tl{ top:-4px; left:-4px; } .corner.tr{ top:-4px; right:-4px; }
+  .corner.bl{ bottom:-4px; left:-4px; } .corner.br{ bottom:-4px; right:-4px; }
+
+  #digital-clock{
+    display:none; align-items:baseline; justify-content:center; gap:14px;
+    font-size:3.4rem; color:var(--ink); letter-spacing:2px;
+  }
+  #digital-clock.active{ display:flex; }
+  .ampm{ font-size:1.1rem; color:var(--accent); }
+  .date-line{
+    text-align:center; font-size:.65rem; color:var(--ink); opacity:.65;
+    margin-top:14px; letter-spacing:1px;
+  }
+
+  #analogue-clock{
+    display:none; width:180px; height:180px; position:relative;
+  }
+  #analogue-clock.active{ display:block; }
+  .clock-face{
+    width:100%; height:100%; border-radius:50%;
+    background:#fffefa;
+    box-shadow: inset 0 0 0 6px var(--ink), inset 0 0 0 10px #fff, 0 0 0 3px var(--ink);
+    position:relative;
+  }
+  .tick{ position:absolute; background:var(--ink); }
+  .tick.major{ width:4px; height:12px; left:50%; top:6px; margin-left:-2px; transform-origin:2px 84px; }
+  .tick.minor{ width:2px; height:6px; left:50%; top:6px; margin-left:-1px; opacity:.5; transform-origin:1px 84px; }
+  .hand{ position:absolute; bottom:50%; left:50%; transform-origin:bottom; background:var(--ink); }
+  .hour-hand{ width:5px; height:44px; margin-left:-2.5px; border-radius:2px; }
+  .minute-hand{ width:4px; height:64px; margin-left:-2px; border-radius:2px; }
+  .second-hand{ width:2px; height:70px; margin-left:-1px; background:var(--accent); }
+  .center-dot{ position:absolute; top:50%; left:50%; width:10px; height:10px; background:var(--accent); border:2px solid var(--ink); transform:translate(-50%,-50%); border-radius:50%; z-index:5; }
+
+  .controls{ display:flex; gap:16px; }
+  .toggle-btn{
+    font-family:'Press Start 2P',monospace; font-size:.6rem;
+    background:var(--panel); color:var(--ink); border:3px solid var(--panel-edge);
+    box-shadow:3px 3px 0 var(--panel-edge);
+    padding:10px 14px; cursor:pointer; display:flex; align-items:center; gap:8px;
+    transition:transform .08s ease, box-shadow .08s ease;
+  }
+  .toggle-btn:hover{ transform:translate(-1px,-1px); box-shadow:4px 4px 0 var(--panel-edge); }
+  .toggle-btn:active{ transform:translate(2px,2px); box-shadow:1px 1px 0 var(--panel-edge); }
+  .toggle-btn.active{ background:var(--accent); color:#fff2e6; }
+  .btn-icon{ width:16px; height:16px; }
+
+  .mode-label{
+    position:absolute; top:18px; left:18px; z-index:10;
+    font-size:.6rem; color:#fff; text-shadow:1px 1px 0 rgba(0,0,0,.4);
+    letter-spacing:1px; background:rgba(0,0,0,.18); padding:6px 10px;
+    border:2px solid rgba(255,255,255,.4);
+  }
+
+  @media (max-width:480px){
+    #digital-clock{ font-size:2.2rem; }
+    .clock-panel{ padding:18px 20px; }
+    #analogue-clock{ width:140px; height:140px; }
+    .mode-label{ font-size:.5rem; }
+  }
+</style>
+</head>
+<body class="day">
+
+  <div class="stars" id="stars"></div>
+
+  <div class="celestial-wrap">
+    <div class="celestial">
+      <div class="sun-core"></div>
+      <div class="moon-core">
+        <div class="crater" style="left:6px; top:8px; width:6px; height:6px; border-radius:50%;"></div>
+        <div class="crater" style="left:20px; top:16px; width:8px; height:8px; border-radius:50%;"></div>
+        <div class="crater" style="left:10px; top:22px; width:5px; height:5px; border-radius:50%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="cloud-layer" id="cloudLayer"></div>
+  <div class="bird-layer" id="birdLayer"></div>
+  <div class="plane-layer" id="planeLayer"></div>
+
+  <div class="skyline">
+    <svg viewBox="0 0 400 90" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+      <!-- far layer -->
+      <g class="bld-far">
+        <rect x="0" y="35" width="30" height="55"/>
+        <rect x="34" y="20" width="24" height="70"/>
+        <rect x="62" y="45" width="26" height="45"/>
+        <rect x="92" y="10" width="22" height="80"/>
+        <rect x="118" y="30" width="30" height="60"/>
+        <rect x="152" y="18" width="20" height="72"/>
+        <rect x="176" y="40" width="28" height="50"/>
+        <rect x="208" y="25" width="24" height="65"/>
+        <rect x="236" y="42" width="30" height="48"/>
+        <rect x="270" y="15" width="22" height="75"/>
+        <rect x="296" y="34" width="26" height="56"/>
+        <rect x="326" y="22" width="24" height="68"/>
+        <rect x="354" y="38" width="26" height="52"/>
+        <rect x="384" y="24" width="16" height="66"/>
+      </g>
+      <!-- near layer with windows -->
+      <g class="bld-near">
+        <rect x="-10" y="55" width="36" height="35"/>
+        <rect x="30" y="42" width="28" height="48"/>
+        <rect x="62" y="60" width="24" height="30"/>
+        <rect x="90" y="30" width="30" height="60"/>
+        <rect x="124" y="50" width="26" height="40"/>
+        <rect x="154" y="38" width="22" height="52"/>
+        <rect x="180" y="58" width="30" height="32"/>
+        <rect x="214" y="32" width="24" height="58"/>
+        <rect x="242" y="48" width="28" height="42"/>
+        <rect x="274" y="36" width="22" height="54"/>
+        <rect x="300" y="56" width="30" height="34"/>
+        <rect x="334" y="40" width="24" height="50"/>
+        <rect x="362" y="52" width="28" height="38"/>
+        <rect x="394" y="44" width="16" height="46"/>
+      </g>
+      <g id="windows"></g>
+    </svg>
+  </div>
+
+  <div class="mode-label" id="modeLabel">DAY</div>
+
+  <div class="container">
+    <div class="clock-panel">
+      <span class="corner tl"></span><span class="corner tr"></span>
+      <span class="corner bl"></span><span class="corner br"></span>
+
+      <div id="digital-clock" class="active">
+        <span id="digital-time">12:00</span><span class="ampm" id="digital-ampm">AM</span>
+      </div>
+
+      <div id="analogue-clock">
+        <div class="clock-face">
+          <div class="hand hour-hand" id="hour-hand"></div>
+          <div class="hand minute-hand" id="minute-hand"></div>
+          <div class="hand second-hand" id="second-hand"></div>
+          <div class="center-dot"></div>
+        </div>
+      </div>
+
+      <div class="date-line" id="dateLine">MON, JAN 01</div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-digital" class="toggle-btn active">
+        <svg class="btn-icon" viewBox="0 0 16 16"><rect width="16" height="16" fill="none"/><path d="M2 4h12v8H2V4zm2 2v4h8V6H4zm0 1h8v2H4V7z" fill="currentColor"/></svg>
+        DIGITAL
+      </button>
+      <button id="btn-analogue" class="toggle-btn">
+        <svg class="btn-icon" viewBox="0 0 16 16"><path d="M5 2h6v1H5V2zM3 3h10v1H3V3zM2 4h12v8H2V4zM3 12h10v1H3v-1zM5 13h6v1H5v-1zM8 5v4h3v-1H9V5H8z" fill="currentColor"/></svg>
+        ANALOGUE
+      </button>
+    </div>
+  </div>
+
+<script>
+  // ---------- Stars ----------
+  const starsEl = document.getElementById('stars');
+  for(let i=0;i<45;i++){
+    const s=document.createElement('div');
+    s.className='star'+(Math.random()>0.8?' big':'');
+    s.style.left=Math.random()*100+'%';
+    s.style.top=Math.random()*70+'%';
+    s.style.animationDelay=(Math.random()*3)+'s';
+    starsEl.appendChild(s);
+  }
+
+  // ---------- Pixel clouds (built from stacked rects to look pixel-blocky) ----------
+  function makeCloud(scale){
+    const wrap=document.createElement('div');
+    wrap.className='cloud';
+    wrap.style.width=(60*scale)+'px';
+    wrap.style.height=(28*scale)+'px';
+    // pixel block layout roughly forming a cloud silhouette
+    const blocks=[
+      [8,16,28,8],[16,8,28,8],[0,16,12,8],[36,16,16,8],
+      [4,8,12,8],[24,0,16,8],[44,8,12,8],[0,20,44,8],
+      [40,20,16,4]
+    ];
+    blocks.forEach(([x,y,w,h])=>{
+      const b=document.createElement('div');
+      b.className='cloud-px';
+      b.style.left=(x*scale)+'px';
+      b.style.top=(y*scale)+'px';
+      b.style.width=(w*scale)+'px';
+      b.style.height=(h*scale)+'px';
+      wrap.appendChild(b);
+    });
+    return wrap;
+  }
+
+  const cloudLayer=document.getElementById('cloudLayer');
+  const cloudConfigs=[
+    {scale:1.6, top:'12%', dur:70, delay:0},
+    {scale:1.1, top:'22%', dur:55, delay:-20},
+    {scale:2.0, top:'8%',  dur:90, delay:-45},
+    {scale:0.9, top:'30%', dur:48, delay:-10},
+    {scale:1.4, top:'18%', dur:80, delay:-60},
+  ];
+  cloudConfigs.forEach(cfg=>{
+    const c=makeCloud(cfg.scale);
+    c.style.top=cfg.top;
+    c.style.animation=`driftRight ${cfg.dur}s linear infinite`;
+    c.style.animationDelay=cfg.delay+'s';
+    cloudLayer.appendChild(c);
+  });
+
+  // ---------- Birds (small flapping V shapes crossing at intervals) ----------
+  const birdLayer=document.getElementById('birdLayer');
+  const birdSVG = `<svg viewBox="0 0 20 12" xmlns="http://www.w3.org/2000/svg">
+      <path d="M0 6 L6 2 L10 6 L14 2 L20 6 L14 4 L10 8 L6 4 Z"/>
+    </svg>`;
+
+  function spawnBirdFlock(){
+    const flockSize = 2 + Math.floor(Math.random()*3);
+    const baseTop = 15 + Math.random()*25;
+    const dur = 14 + Math.random()*8;
+    for(let i=0;i<flockSize;i++){
+      const b=document.createElement('div');
+      b.className='bird';
+      b.innerHTML=birdSVG;
+      b.style.top=(baseTop + i*3)+'%';
+      b.style.left='0';
+      b.style.animation=`flyAcross ${dur}s linear forwards`;
+      b.style.animationDelay=(i*0.4)+'s';
+      b.style.setProperty('transform-origin','center');
+      // flap by scaling the svg path vertically via keyframe on inner svg
+      const svgEl=b.querySelector('svg');
+      svgEl.style.animation=`flap 0.5s steps(2) infinite`;
+      birdLayer.appendChild(b);
+      setTimeout(()=>b.remove(), (dur+i*0.4)*1000+200);
+    }
+  }
+  setInterval(spawnBirdFlock, 18000);
+  setTimeout(spawnBirdFlock, 2000);
+
+  // ---------- Plane ----------
+  const planeLayer=document.getElementById('planeLayer');
+  function spawnPlane(){
+    const p=document.createElement('div');
+    p.className='plane';
+    p.style.top=(10+Math.random()*15)+'%';
+    p.innerHTML = `<div class="contrail"></div>
+      <svg viewBox="0 0 36 16" xmlns="http://www.w3.org/2000/svg">
+        <path d="M0 8h10l4-4h4l-2 4h6l4-3h3l-2 3 2 3h-3l-4-3h-6l2 4h-4l-4-4H0z"/>
+      </svg>`;
+    p.style.animationDuration = (28+Math.random()*10)+'s';
+    planeLayer.appendChild(p);
+    setTimeout(()=>p.remove(), 40000);
+  }
+  setInterval(spawnPlane, 45000);
+  setTimeout(spawnPlane, 6000);
+
+  // ---------- Windows (lit at night/dusk, randomized) ----------
+  const windowsGroup=document.getElementById('windows');
+  const winSpots=[];
+  // generate window grid positions matching near buildings roughly
+  const nearBuildings=[
+    [-10,55,36,35],[30,42,28,48],[62,60,24,30],[90,30,30,60],[124,50,26,40],
+    [154,38,22,52],[180,58,30,32],[214,32,24,58],[242,48,28,42],[274,36,22,54],
+    [300,56,30,34],[334,40,24,50],[362,52,28,38],[394,44,16,46]
+  ];
+  nearBuildings.forEach(([x,y,w,h])=>{
+    for(let wx=x+4; wx<x+w-4; wx+=7){
+      for(let wy=y+5; wy<y+h-4; wy+=9){
+        if(Math.random()>0.35){
+          const r=document.createElementNS('http://www.w3.org/2000/svg','rect');
+          r.setAttribute('x',wx); r.setAttribute('y',wy);
+          r.setAttribute('width',3); r.setAttribute('height',4);
+          r.setAttribute('class','win'+(Math.random()>0.5?' lit':''));
+          windowsGroup.appendChild(r);
+          winSpots.push(r);
+        }
+      }
+    }
+  });
+
+  function flickerWindows(){
+    winSpots.forEach(w=>{
+      if(Math.random()>0.985){ w.classList.toggle('lit'); }
+    });
+  }
+  setInterval(flickerWindows, 800);
+
+  // ---------- Clock logic ----------
+  const digitalClock=document.getElementById('digital-clock');
+  const analogueClock=document.getElementById('analogue-clock');
+  const btnDigital=document.getElementById('btn-digital');
+  const btnAnalogue=document.getElementById('btn-analogue');
+  const digitalTime=document.getElementById('digital-time');
+  const digitalAmpm=document.getElementById('digital-ampm');
+  const hourHand=document.getElementById('hour-hand');
+  const minuteHand=document.getElementById('minute-hand');
+  const secondHand=document.getElementById('second-hand');
+  const modeLabel=document.getElementById('modeLabel');
+  const dateLine=document.getElementById('dateLine');
+  const clockFace=document.querySelector('.clock-face');
+
+  btnDigital.addEventListener('click',()=>{
+    digitalClock.classList.add('active'); analogueClock.classList.remove('active');
+    btnDigital.classList.add('active'); btnAnalogue.classList.remove('active');
+  });
+  btnAnalogue.addEventListener('click',()=>{
+    analogueClock.classList.add('active'); digitalClock.classList.remove('active');
+    btnAnalogue.classList.add('active'); btnDigital.classList.remove('active');
+  });
+
+  // build tick marks once
+  for(let i=0;i<60;i++){
+    const t=document.createElement('div');
+    const major=i%5===0;
+    t.className='tick '+(major?'major':'minor');
+    t.style.transform=`rotate(${i*6}deg)`;
+    clockFace.appendChild(t);
+  }
+
+  const DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+  const MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+
+  function updateClock(){
+    const now=new Date();
+    const h=now.getHours(), m=now.getMinutes(), s=now.getSeconds();
+    updateSky(h);
+
+    let dh=h%12; dh=dh?dh:12;
+    const mm=m<10?'0'+m:m;
+    const ampm=h>=12?'PM':'AM';
+    const dh2=dh<10?'0'+dh:dh;
+    digitalTime.innerText=`${dh2}:${mm}`;
+    digitalAmpm.innerText=ampm;
+
+    dateLine.innerText=`${DAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate().toString().padStart(2,'0')}`;
+
+    const hourDeg=(h%12)*30+m*0.5;
+    const minDeg=m*6;
+    const secDeg=s*6;
+    hourHand.style.transform=`translateX(-50%) rotate(${hourDeg}deg)`;
+    minuteHand.style.transform=`translateX(-50%) rotate(${minDeg}deg)`;
+    secondHand.style.transform=`translateX(-50%) rotate(${secDeg}deg)`;
+  }
+
+  function updateSky(h){
+    const cl=document.body.classList;
+    cl.remove('dawn','day','dusk','night');
+    let mode;
+    if(h>=5 && h<9) mode='dawn';
+    else if(h>=9 && h<17) mode='day';
+    else if(h>=17 && h<20) mode='dusk';
+    else mode='night';
+    cl.add(mode);
+    modeLabel.innerText=mode.toUpperCase();
+  }
+
+  updateClock();
+  setInterval(updateClock,1000);
+</script>
+</body>
+</html>
